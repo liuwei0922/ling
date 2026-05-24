@@ -2,13 +2,12 @@
 name = "ling"
 version = "0.1.0"
 edition = "2021"
-description = "A toy model exploring language and thinking through function spaces and operator learning"
+description = "Experiments for language-like composition through feature and state mappings"
 authors = ["moxian"]
 
 [dependencies]
-num-complex = "0.4"
-rand = "0.8"
-rand_distr = "0.4"
+log = "0.4"
+env_logger = "0.11"
 
 [profile.release]
 opt-level = 3

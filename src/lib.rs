@@ -1,13 +1,13 @@
-/// Ling: a toy model exploring language and thinking through
-/// amplitude propagation and conceptual operator learning.
+/// Ling: experiments for modeling language-like composition through mappings
+/// between a feature set `T` and a state set `S`.
 ///
 /// # Modules
 ///
-/// - **core**: Mathematical foundation — amplitude states, operators, activation functions
-/// - **concept**: Dynamic concept space with pruning heuristics
-/// - **engine**: Training and optimization infrastructure
-/// - **toy**: Toy experiments (4-direction command agent)
-pub mod core;
-pub mod concept;
-pub mod engine;
-pub mod toy;
+/// - **feature**: Feature elements and the similarity space over `T`
+/// - **state**: State elements and type-2 links inside `S`
+/// - **mapping**: Composition records and transfer rules
+/// - **probability**: Amplitude accumulation, Born normalization, and selection
+pub mod feature;
+pub mod mapping;
+pub mod probability;
+pub mod state;

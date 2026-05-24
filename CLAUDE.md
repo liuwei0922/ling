@@ -1,62 +1,70 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本项目以 `spec.org` 为规范标准，目标是实验“特征集合 T”和“状态集合 S”之间的映射、相似性诱导与复合规则学习。
 
-## Project Overview
+## 当前结构
 
-Ling is a Rust toy model exploring language and thinking through amplitude propagation and conceptual operator learning. The core idea: instead of learning direct input→output mappings, learn **operators** (transformations in a conceptual space) and how commands superpose them coherently (quantum-style).
+```text
+src/
+├── lib.rs
+├── feature.rs
+├── feature/
+│   └── space.rs      # Feature, Neighborhood, SimilaritySpace
+├── state.rs
+├── state/
+│   ├── link.rs       # Type1Link, Type2Link
+│   └── space.rs      # State, StateSpace
+├── mapping.rs
+├── mapping/
+│   ├── compose.rs    # CompositionExample, CompositionLearner
+│   └── output.rs     # OutputMapping, StateOutputDistribution
+└── probability.rs    # AmplitudeDistribution, Born normalization, selection
+examples/
+├── composition_transfer.rs
+└── fixed_composition_transfer.rs
+tests/
+└── structure_tests.rs
+```
 
-## Build & Test Commands
+模块不使用新的 `mod.rs`。使用 `feature.rs + feature/...`、`state.rs + state/...`、`mapping.rs + mapping/...` 的布局。
+
+## 设计原则
+
+- `T` 是特征集合，承载外部输入、输出及可观察特征。
+- `T` 上的相似空间由 `Neighborhood` 构成。
+- `Neighborhood` 只保存成员；置信度保存在 `Feature` 对邻域的隶属关系上。
+- `S` 是状态集合，保持干净，不写人工语义 tag。
+- `State` 通过 `support_features` 关联到 `T`，状态相似性由支持特征在 `T` 上的相似性诱导。
+- `S -> S` 中元素到元素的连线是 1 型连线 `Type1Link`。
+- `S -> S` 中状态子集到状态子集的映射是 2 型连线 `Type2Link`。
+- `Type2Link` 内部由 `Type1Link` 组成，每条 1 型连线带一个系数。
+- 复合规则学习放在 `mapping` 模块中，第一版只实现最小可验证的单目标迁移。
+- 三类映射统一使用实数振幅相干叠加、Born 归一化和 argmax 选择函数。
+
+## 实验入口
+
+训练、模拟和实验入口放在 `examples/` 中，不使用 `src/main.rs`。
+
+当前 example：
 
 ```bash
-cargo build                  # Build library
-cargo build --example toy_directions  # Build toy example
-cargo run --example toy_directions    # Run toy experiment
-cargo test                   # Run all tests
-cargo test --test core_tests # Run integration tests only
-cargo doc --open             # Build and open docs
+cargo run --example composition_transfer
+cargo run --example fixed_composition_transfer
 ```
 
-## Project Structure
+## 检查命令
 
-```
-src/
-├── lib.rs              # Public API: re-exports core, concept, engine, toy
-├── core/               # Math foundation — amplitude states, operators, activation
-│   ├── amplitude.rs    # AmplitudeState, Operator, OperatorSuperposition
-│   └── activation.rs   # Activation trait + implementations (BornRule, SigmoidGate, MagnitudeSoftmax)
-├── concept/            # Dynamic concept space with pruning
-│   └── space.rs        # ConceptSpace, Label, PruningConfig (frequency/overlap/entropy pruning)
-├── engine/             # Training — gradient-free optimizers for small param spaces
-│   └── trainer.rs      # Trainer (finite-difference), EvolutionaryOptimizer
-└── toy/                # 4-direction toy experiment
-    ├── data.rs         # Dataset: commands with train/test split, vocab encoding
-    └── agent.rs        # ToyAgent: amplitude-propagation model, LossEvaluator
-examples/
-└── toy_directions.rs   # Runnable experiment script
-tests/
-└── core_tests.rs       # Core math tests
+```bash
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-## Current Toy Results (Baseline)
+## 代码规范
 
-The 4-direction experiment shows the model can generalize seen concepts to novel phrasings, but only when the underlying concept (e.g., direction "北") appears frequently across diverse patterns. Concepts with sparse coverage fail to transfer.
-
-- **Train accuracy**: 98.08% (fits training data)
-- **Test accuracy**: 52.08% (vs random 25%)
-- "北"/"南" generalize to unseen commands (e.g., "看向北" → 100%); "东"/"西" mostly don't
-- Confirms the premise: concept learning requires **frequency + diversity** — mimicking how humans need repeated exposure to foundational concepts before building up hierarchy
-
-## Architecture Principles
-
-- **core/**: Pure math, no training logic. `AmplitudeState` is a complex vector; `Operator` is a complex matrix; `OperatorSuperposition` combines them coherently (interference). Activation traits convert amplitudes to probabilities.
-- **concept/**: Dynamic label sets. Labels are over-generated then pruned by frequency, overlap, and entropy.
-- **engine/**: Optimizers work on flat `Vec<f64>` parameter slices. Toy models expose `flatten_params()`/`restore_params()` for this.
-- **toy/**: Concrete experiments. `ToyAgent` uses feature vectors → operator coefficients (tanh-activated) → coherent superposition → Born rule output.
-
-## Key Design Decisions
-
-- Operators store flat as `Vec<f64>` for easy optimization access
-- LossEvaluator uses RefCell to avoid cloning on every loss evaluation
-- Activation trait allows switching measurement regime (Born/sigmoid/softmax)
-- All activation types derive Clone for use in models
+- 使用 Rust 2021。
+- 不使用 `println!` / `eprintln!`；实验输出使用 `log` + `env_logger`。
+- 公共 API 写 `///` 文档注释。
+- 优先使用 newtype ID，例如 `FeatureId`、`NeighborhoodId`、`StateId`、`LinkId`。
+- 不在核心状态结构里写语义 tag。
+- 先保证结构清晰和可测试，再引入训练机制。
