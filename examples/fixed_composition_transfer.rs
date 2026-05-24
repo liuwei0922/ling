@@ -15,12 +15,16 @@
 
 use std::error::Error;
 
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+
 use ling::feature::{
     Feature, FeatureId, Neighborhood, NeighborhoodId, NeighborhoodRef, SimilaritySpace,
 };
 use ling::mapping::{
     CompositionExample, CompositionLearner, FeatureWeight, OutputMapping, StateOutputDistribution,
 };
+use ling::probability::SelectionMode;
 use ling::state::{LinkId, State, StateId, StateSpace, Type2Link};
 
 const SIMILARITY_THRESHOLD: f64 = 0.9;
@@ -40,6 +44,7 @@ struct ReportContext<'a> {
     feature_space: &'a SimilaritySpace,
     output_mapping: &'a OutputMapping,
     output_features: &'a [FeatureId],
+    selection_mode: SelectionMode,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -108,6 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         feature_space: &feature_space,
         output_mapping: &output_mapping,
         output_features: &output_features,
+        selection_mode: SelectionMode::Argmax,
     };
     report_split("train", train, &report_context);
     report_split("test", test, &report_context);
@@ -168,6 +174,7 @@ fn build_output_mapping(directions: &[DirectionCase]) -> OutputMapping {
 }
 
 fn report_split(label: &str, cases: &[DirectionCase], context: &ReportContext<'_>) {
+    let mut rng = StdRng::seed_from_u64(42);
     let mut correct = 0;
     for (idx, case) in cases.iter().enumerate() {
         let generated = context.learner.transfer_single_target(
@@ -179,9 +186,12 @@ fn report_split(label: &str, cases: &[DirectionCase], context: &ReportContext<'_
         );
         let prediction = generated.as_ref().and_then(|link| {
             let output_distribution = context.output_mapping.link_output_distribution(link);
-            context
-                .output_mapping
-                .select_feature(&output_distribution, Some(context.output_features))
+            context.output_mapping.select_feature(
+                &output_distribution,
+                context.selection_mode,
+                Some(context.output_features),
+                &mut rng,
+            )
         });
         let is_correct = prediction == Some(case.output_feature);
         if is_correct {

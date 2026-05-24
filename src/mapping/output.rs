@@ -1,5 +1,7 @@
+use rand::Rng;
+
 use crate::feature::FeatureId;
-use crate::probability::AmplitudeDistribution;
+use crate::probability::{AmplitudeDistribution, SelectionMode};
 use crate::state::{StateId, Type2Link};
 
 /// A feature amplitude or probability in an output distribution over `T`.
@@ -78,17 +80,21 @@ impl OutputMapping {
             .collect()
     }
 
-    /// Choose the highest-weight output feature, optionally restricted to a
-    /// requested output feature subset.
+    /// Choose an output feature from a distribution using the given selection mode.
     pub fn select_feature(
         &self,
         distribution: &[FeatureWeight],
+        mode: SelectionMode,
         allowed_features: Option<&[FeatureId]>,
+        rng: &mut impl Rng,
     ) -> Option<FeatureId> {
+        if distribution.is_empty() {
+            return None;
+        }
         let mut amplitudes = AmplitudeDistribution::new();
         for feature in distribution {
             amplitudes.add(feature.feature, feature.weight.sqrt());
         }
-        amplitudes.select_argmax(allowed_features)
+        amplitudes.select(mode, allowed_features, rng)
     }
 }

@@ -1,10 +1,13 @@
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+
 use ling::feature::{
     Feature, FeatureId, Neighborhood, NeighborhoodId, NeighborhoodRef, SimilaritySpace,
 };
 use ling::mapping::{
     CompositionExample, CompositionLearner, FeatureWeight, OutputMapping, StateOutputDistribution,
 };
-use ling::probability::AmplitudeDistribution;
+use ling::probability::{AmplitudeDistribution, SelectionMode};
 use ling::state::{LinkId, State, StateId, StateSpace, Type1Link, Type2Link};
 
 #[test]
@@ -108,7 +111,11 @@ fn type2_link_activation_filters_by_active_source() {
     let targets: Vec<StateId> = probabilities.iter().map(|entry| entry.item).collect();
 
     assert_eq!(targets, vec![StateId(2), StateId(3)]);
-    assert_eq!(link.select_target(&[StateId(0)]), Some(StateId(2)));
+    let mut rng = StdRng::seed_from_u64(42);
+    assert_eq!(
+        link.select_target(&[StateId(0)], SelectionMode::Argmax, &mut rng),
+        Some(StateId(2))
+    );
 }
 
 #[test]
@@ -179,8 +186,13 @@ fn type2_link_output_is_projected_back_to_features() {
     ));
 
     let distribution = output_mapping.link_output_distribution(&link);
-    let selected =
-        output_mapping.select_feature(&distribution, Some(&[FeatureId(20), FeatureId(21)]));
+    let mut rng = StdRng::seed_from_u64(42);
+    let selected = output_mapping.select_feature(
+        &distribution,
+        SelectionMode::Argmax,
+        Some(&[FeatureId(20), FeatureId(21)]),
+        &mut rng,
+    );
 
     assert_eq!(selected, Some(FeatureId(21)));
 }

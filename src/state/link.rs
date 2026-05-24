@@ -1,5 +1,7 @@
+use rand::Rng;
+
 use super::space::StateId;
-use crate::probability::{AmplitudeDistribution, Probability};
+use crate::probability::{AmplitudeDistribution, Probability, SelectionMode};
 
 /// Identifier for a type-2 link in the state set `S`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -72,14 +74,19 @@ impl Type2Link {
         amplitudes.probabilities()
     }
 
-    /// Select the highest-probability target among active paths.
-    pub fn select_target(&self, active_sources: &[StateId]) -> Option<StateId> {
+    /// Select a target state from the active paths using the given selection mode.
+    pub fn select_target(
+        &self,
+        active_sources: &[StateId],
+        mode: SelectionMode,
+        rng: &mut impl Rng,
+    ) -> Option<StateId> {
         let mut amplitudes = AmplitudeDistribution::new();
         for link in &self.type1_links {
             if active_sources.contains(&link.source) {
                 amplitudes.add(link.target, link.coefficient);
             }
         }
-        amplitudes.select_argmax(Some(&self.target))
+        amplitudes.select(mode, Some(&self.target), rng)
     }
 }
