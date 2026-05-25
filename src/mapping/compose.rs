@@ -1,4 +1,3 @@
-use crate::feature::SimilaritySpace;
 use crate::state::{LinkId, StateId, StateSpace, Type2Link};
 
 /// A training observation for composition: `operator + argument -> result`.
@@ -46,7 +45,6 @@ impl CompositionLearner {
         argument: StateId,
         new_link_id: LinkId,
         state_space: &StateSpace,
-        similarity_space: &SimilaritySpace,
     ) -> Option<Type2Link> {
         self.examples.iter().find_map(|example| {
             if example.operator != operator {
@@ -62,8 +60,7 @@ impl CompositionLearner {
                 return None;
             }
 
-            let similarity =
-                state_space.state_similarity(example.argument, argument, similarity_space);
+            let similarity = state_space.state_similarity(example.argument, argument);
             if similarity < self.similarity_threshold {
                 return None;
             }

@@ -2,6 +2,4 @@
 
 pub mod space;
 
-pub use space::{
-    Feature, FeatureId, Neighborhood, NeighborhoodId, NeighborhoodRef, SimilaritySpace,
-};
+pub use space::{Feature, FeatureId};

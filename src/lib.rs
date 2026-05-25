@@ -3,8 +3,8 @@
 ///
 /// # Modules
 ///
-/// - **feature**: Feature elements and the similarity space over `T`
-/// - **state**: State elements and type-2 links inside `S`
+/// - **feature**: Feature elements acting as external input/output identifiers
+/// - **state**: State elements, neighborhoods, similarity space, and type-2 links inside `S`
 /// - **mapping**: Composition records and transfer rules
 /// - **probability**: Amplitude accumulation, Born normalization, and selection
 pub mod feature;

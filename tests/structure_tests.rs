@@ -1,72 +1,69 @@
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use ling::feature::{
-    Feature, FeatureId, Neighborhood, NeighborhoodId, NeighborhoodRef, SimilaritySpace,
-};
+use ling::feature::FeatureId;
 use ling::mapping::{
     CompositionExample, CompositionLearner, FeatureWeight, OutputMapping, StateOutputDistribution,
 };
 use ling::probability::{AmplitudeDistribution, SelectionMode};
-use ling::state::{LinkId, State, StateId, StateSpace, Type1Link, Type2Link};
+use ling::state::{
+    LinkId, Neighborhood, NeighborhoodId, NeighborhoodRef, State, StateId, StateSpace, Type1Link,
+    Type2Link,
+};
 
 #[test]
-fn feature_similarity_comes_from_shared_neighborhoods() {
+fn state_similarity_comes_from_shared_neighborhoods() {
     let direction = NeighborhoodId(0);
     let other = NeighborhoodId(1);
-    let mut space = SimilaritySpace::new();
-    space.add_neighborhood(Neighborhood::new(
+
+    let mut state_space = StateSpace::new();
+    state_space.add_neighborhood(Neighborhood::new(
         direction,
-        vec![FeatureId(0), FeatureId(1), FeatureId(2), FeatureId(3)],
+        vec![StateId(0), StateId(1), StateId(2), StateId(3)],
     ));
-    space.add_neighborhood(Neighborhood::new(other, vec![FeatureId(4)]));
-    space.add_feature(Feature::new(
-        FeatureId(0),
+    state_space.add_neighborhood(Neighborhood::new(other, vec![StateId(4)]));
+    state_space.add_state(State::new(
+        StateId(0),
+        vec![],
         vec![NeighborhoodRef::from(direction)],
         vec![1.0],
     ));
-    space.add_feature(Feature::new(
-        FeatureId(1),
+    state_space.add_state(State::new(
+        StateId(1),
+        vec![],
         vec![NeighborhoodRef::from(direction)],
         vec![0.8],
     ));
-    space.add_feature(Feature::new(
-        FeatureId(4),
+    state_space.add_state(State::new(
+        StateId(4),
+        vec![],
         vec![NeighborhoodRef::from(other)],
         vec![1.0],
     ));
 
-    assert!(space.feature_similarity(FeatureId(0), FeatureId(1)) > 0.7);
-    assert_eq!(space.feature_similarity(FeatureId(0), FeatureId(4)), 0.0);
+    assert!(state_space.state_similarity(StateId(0), StateId(1)) > 0.7);
+    assert_eq!(state_space.state_similarity(StateId(0), StateId(4)), 0.0);
 }
 
 #[test]
-fn state_similarity_is_induced_from_support_features() {
+fn state_similarity_is_direct_neighborhood_overlap() {
     let direction = NeighborhoodId(0);
-    let mut feature_space = SimilaritySpace::new();
-    feature_space.add_neighborhood(Neighborhood::new(
-        direction,
-        vec![FeatureId(0), FeatureId(1)],
-    ));
-    feature_space.add_feature(Feature::new(
-        FeatureId(0),
-        vec![NeighborhoodRef::from(direction)],
-        vec![1.0],
-    ));
-    feature_space.add_feature(Feature::new(
-        FeatureId(1),
-        vec![NeighborhoodRef::from(direction)],
-        vec![1.0],
-    ));
-
     let mut state_space = StateSpace::new();
-    state_space.add_state(State::new(StateId(0), vec![FeatureId(0)]));
-    state_space.add_state(State::new(StateId(1), vec![FeatureId(1)]));
+    state_space.add_neighborhood(Neighborhood::new(direction, vec![StateId(0), StateId(1)]));
+    state_space.add_state(State::new(
+        StateId(0),
+        vec![],
+        vec![NeighborhoodRef::from(direction)],
+        vec![1.0],
+    ));
+    state_space.add_state(State::new(
+        StateId(1),
+        vec![],
+        vec![NeighborhoodRef::from(direction)],
+        vec![1.0],
+    ));
 
-    assert_eq!(
-        state_space.state_similarity(StateId(0), StateId(1), &feature_space),
-        1.0
-    );
+    assert_eq!(state_space.state_similarity(StateId(0), StateId(1)), 1.0);
 }
 
 #[test]
@@ -121,27 +118,34 @@ fn type2_link_activation_filters_by_active_source() {
 #[test]
 fn composition_transfer_uses_state_similarity() {
     let direction = NeighborhoodId(0);
-    let mut feature_space = SimilaritySpace::new();
-    feature_space.add_neighborhood(Neighborhood::new(
+    let mut state_space = StateSpace::new();
+    state_space.add_neighborhood(Neighborhood::new(
         direction,
-        vec![FeatureId(0), FeatureId(1), FeatureId(2)],
+        vec![StateId(0), StateId(1), StateId(2)],
     ));
-    for feature in [FeatureId(0), FeatureId(1), FeatureId(2)] {
-        feature_space.add_feature(Feature::new(
-            feature,
-            vec![NeighborhoodRef::from(direction)],
-            vec![1.0],
-        ));
-    }
 
     let turn = StateId(10);
     let a = StateId(0);
     let c = StateId(2);
-    let mut state_space = StateSpace::new();
-    state_space.add_state(State::new(a, vec![FeatureId(0)]));
-    state_space.add_state(State::new(StateId(1), vec![FeatureId(1)]));
-    state_space.add_state(State::new(c, vec![FeatureId(2)]));
-    state_space.add_state(State::new(turn, Vec::new()));
+    state_space.add_state(State::new(
+        a,
+        vec![FeatureId(0)],
+        vec![NeighborhoodRef::from(direction)],
+        vec![1.0],
+    ));
+    state_space.add_state(State::new(
+        StateId(1),
+        vec![FeatureId(1)],
+        vec![NeighborhoodRef::from(direction)],
+        vec![1.0],
+    ));
+    state_space.add_state(State::new(
+        c,
+        vec![FeatureId(2)],
+        vec![NeighborhoodRef::from(direction)],
+        vec![1.0],
+    ));
+    state_space.add_state(State::new(turn, vec![], vec![], vec![]));
     state_space.add_link(Type2Link::complete(
         LinkId(0),
         vec![a, StateId(1), c],
@@ -157,7 +161,7 @@ fn composition_transfer_uses_state_similarity() {
     });
 
     let generated = learner
-        .transfer_single_target(turn, c, LinkId(1), &state_space, &feature_space)
+        .transfer_single_target(turn, c, LinkId(1), &state_space)
         .expect("similar state should transfer");
 
     assert_eq!(generated.target, vec![c]);

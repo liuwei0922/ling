@@ -1,10 +1,10 @@
 use std::error::Error;
 
-use ling::feature::{
-    Feature, FeatureId, Neighborhood, NeighborhoodId, NeighborhoodRef, SimilaritySpace,
-};
+use ling::feature::FeatureId;
 use ling::mapping::{CompositionExample, CompositionLearner};
-use ling::state::{LinkId, State, StateId, StateSpace, Type2Link};
+use ling::state::{
+    LinkId, Neighborhood, NeighborhoodId, NeighborhoodRef, State, StateId, StateSpace, Type2Link,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -12,19 +12,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     let direction_neighborhood = NeighborhoodId(0);
-    let mut feature_space = SimilaritySpace::new();
-    feature_space.add_neighborhood(Neighborhood::new(
+    let mut state_space = StateSpace::new();
+    state_space.add_neighborhood(Neighborhood::new(
         direction_neighborhood,
-        vec![FeatureId(0), FeatureId(1), FeatureId(2), FeatureId(3)],
+        vec![StateId(0), StateId(1), StateId(2), StateId(3)],
     ));
-
-    for feature in [FeatureId(0), FeatureId(1), FeatureId(2), FeatureId(3)] {
-        feature_space.add_feature(Feature::new(
-            feature,
-            vec![NeighborhoodRef::from(direction_neighborhood)],
-            vec![1.0],
-        ));
-    }
 
     let turn = StateId(10);
     let a = StateId(0);
@@ -32,12 +24,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let c = StateId(2);
     let d = StateId(3);
 
-    let mut state_space = StateSpace::new();
-    state_space.add_state(State::new(a, vec![FeatureId(0)]));
-    state_space.add_state(State::new(b, vec![FeatureId(1)]));
-    state_space.add_state(State::new(c, vec![FeatureId(2)]));
-    state_space.add_state(State::new(d, vec![FeatureId(3)]));
-    state_space.add_state(State::new(turn, Vec::new()));
+    for (state, feature) in
+        [a, b, c, d]
+            .into_iter()
+            .zip([FeatureId(0), FeatureId(1), FeatureId(2), FeatureId(3)])
+    {
+        state_space.add_state(State::new(
+            state,
+            vec![feature],
+            vec![NeighborhoodRef::from(direction_neighborhood)],
+            vec![1.0],
+        ));
+    }
+    state_space.add_state(State::new(turn, vec![], vec![], vec![]));
 
     state_space.add_link(Type2Link::complete(
         LinkId(0),
@@ -53,9 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         result_link: LinkId(0),
     });
 
-    if let Some(generated) =
-        learner.transfer_single_target(turn, c, LinkId(1), &state_space, &feature_space)
-    {
+    if let Some(generated) = learner.transfer_single_target(turn, c, LinkId(1), &state_space) {
         log::info!(
             "generated link {:?}: {:?} -> {:?}",
             generated.id,
