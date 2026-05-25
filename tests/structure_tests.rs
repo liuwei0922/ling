@@ -68,9 +68,11 @@ fn state_similarity_is_direct_neighborhood_overlap() {
 
 #[test]
 fn type2_link_generates_complete_type1_links() {
+    let source_members = vec![StateId(0), StateId(1), StateId(2)];
     let link = Type2Link::complete(
         LinkId(0),
-        vec![StateId(0), StateId(1), StateId(2)],
+        NeighborhoodId(0),
+        &source_members,
         vec![StateId(3), StateId(4)],
         0.5,
     );
@@ -97,9 +99,11 @@ fn amplitude_distribution_uses_born_rule_and_argmax_selection() {
 
 #[test]
 fn type2_link_activation_filters_by_active_source() {
+    let source_members = vec![StateId(0), StateId(1)];
     let link = Type2Link::complete(
         LinkId(0),
-        vec![StateId(0), StateId(1)],
+        NeighborhoodId(0),
+        &source_members,
         vec![StateId(2), StateId(3)],
         1.0,
     );
@@ -146,9 +150,12 @@ fn composition_transfer_uses_state_similarity() {
         vec![1.0],
     ));
     state_space.add_state(State::new(turn, vec![], vec![], vec![]));
+
+    let source_members = vec![a, StateId(1), c];
     state_space.add_link(Type2Link::complete(
         LinkId(0),
-        vec![a, StateId(1), c],
+        direction,
+        &source_members,
         vec![a],
         1.0,
     ));
@@ -165,14 +172,19 @@ fn composition_transfer_uses_state_similarity() {
         .expect("similar state should transfer");
 
     assert_eq!(generated.target, vec![c]);
-    assert_eq!(generated.source, vec![a, StateId(1), c]);
+    assert_eq!(generated.source, direction);
 }
 
 #[test]
 fn type2_link_output_is_projected_back_to_features() {
-    let source = vec![StateId(0), StateId(1)];
-    let target = vec![StateId(2)];
-    let link = Type2Link::complete(LinkId(0), source, target, 1.0);
+    let source_members = vec![StateId(0), StateId(1)];
+    let link = Type2Link::complete(
+        LinkId(0),
+        NeighborhoodId(0),
+        &source_members,
+        vec![StateId(2)],
+        1.0,
+    );
 
     let mut output_mapping = OutputMapping::new();
     output_mapping.add_state_output(StateOutputDistribution::new(
@@ -205,7 +217,7 @@ fn type2_link_output_is_projected_back_to_features() {
 fn output_projection_uses_coherent_amplitude_sum() {
     let link = Type2Link {
         id: LinkId(0),
-        source: vec![StateId(0), StateId(1)],
+        source: NeighborhoodId(0),
         target: vec![StateId(2), StateId(3)],
         type1_links: vec![
             Type1Link {
@@ -219,6 +231,7 @@ fn output_projection_uses_coherent_amplitude_sum() {
                 coefficient: -1.0,
             },
         ],
+        target_neighborhoods: vec![],
     };
 
     let mut output_mapping = OutputMapping::new();
@@ -240,4 +253,159 @@ fn output_projection_uses_coherent_amplitude_sum() {
     let distribution = output_mapping.link_output_distribution(&link);
 
     assert!(distribution.is_empty());
+}
+
+#[test]
+fn add_link_creates_target_neighborhood_with_born_confidence() {
+    let src_nh = NeighborhoodId(0);
+    let mut space = StateSpace::new();
+    space.add_neighborhood(Neighborhood::new(
+        src_nh,
+        vec![StateId(0), StateId(1), StateId(2)],
+    ));
+
+    let a = StateId(0);
+    let b = StateId(1);
+    let c = StateId(2);
+    let e = StateId(10);
+    let d = StateId(11);
+    for id in [a, b, c] {
+        space.add_state(State::new(id, vec![], vec![], vec![]));
+    }
+
+    // {a,b,c} -> {e,d}, all coefficients 1.0
+    // amp(e)=3, amp(d)=3, Born: P(e)=0.5, P(d)=0.5
+    let source_members = vec![a, b, c];
+    space.add_link(Type2Link::complete(
+        LinkId(0),
+        src_nh,
+        &source_members,
+        vec![e, d],
+        1.0,
+    ));
+
+    // src_nh + 2 target neighborhoods
+    assert_eq!(space.neighborhoods.len(), 3);
+
+    let target_nhs: Vec<_> = space
+        .neighborhoods
+        .iter()
+        .filter(|n| n.id != src_nh)
+        .collect();
+    assert_eq!(target_nhs.len(), 2);
+    for nh in &target_nhs {
+        assert_eq!(nh.members, vec![a, b, c]);
+        assert_eq!(nh.source_links, vec![LinkId(0)]);
+    }
+
+    // Each source state gets confidence 0.5 in each target neighborhood.
+    for id in [a, b, c] {
+        let state = space.state(id).unwrap();
+        assert_eq!(state.confidences, vec![0.5, 0.5]);
+    }
+
+    // The link records its target neighborhoods.
+    let link = &space.links[0];
+    assert_eq!(link.target_neighborhoods.len(), 2);
+}
+
+#[test]
+fn merge_averages_confidences_for_same_source_and_target() {
+    let src_nh = NeighborhoodId(0);
+    let mut space = StateSpace::new();
+    space.add_neighborhood(Neighborhood::new(src_nh, vec![StateId(0), StateId(1)]));
+
+    let a = StateId(0);
+    let b = StateId(1);
+    let e = StateId(10);
+    for id in [a, b] {
+        space.add_state(State::new(id, vec![], vec![], vec![]));
+    }
+
+    // Link 1: {a,b} -> {e}, P(e)=1.0
+    let members = vec![a, b];
+    space.add_link(Type2Link::complete(
+        LinkId(0),
+        src_nh,
+        &members,
+        vec![e],
+        1.0,
+    ));
+
+    // Link 2: {a,b} -> {e}, same (src, target) pair, P(e)=1.0
+    // Born: amp(e)=2, total_sq=4, P=1.0. Merge: mean = (1.0+1.0)/2 = 1.0
+    space.add_link(Type2Link::complete(
+        LinkId(1),
+        src_nh,
+        &members,
+        vec![e],
+        1.0,
+    ));
+
+    // Only 1 target neighborhood (merged), plus src_nh = 2 total
+    assert_eq!(space.neighborhoods.len(), 2);
+
+    // Both links reference the same target neighborhood
+    assert_eq!(
+        space.links[0].target_neighborhoods,
+        space.links[1].target_neighborhoods
+    );
+
+    let target_nh = space.neighborhoods.iter().find(|n| n.id != src_nh).unwrap();
+    assert_eq!(target_nh.source_links, vec![LinkId(0), LinkId(1)]);
+
+    // Confidence should be mean of 1.0 and 1.0 = 1.0
+    for id in [a, b] {
+        let state = space.state(id).unwrap();
+        assert_eq!(state.confidences.len(), 1);
+        assert!((state.confidences[0] - 1.0).abs() < 1e-10);
+    }
+}
+
+#[test]
+fn different_source_neighborhoods_are_not_merged() {
+    let nh0 = NeighborhoodId(0);
+    let nh1 = NeighborhoodId(1);
+    let mut space = StateSpace::new();
+    space.add_neighborhood(Neighborhood::new(nh0, vec![StateId(0), StateId(1)]));
+    space.add_neighborhood(Neighborhood::new(
+        nh1,
+        vec![StateId(0), StateId(1), StateId(2)],
+    ));
+
+    let a = StateId(0);
+    let b = StateId(1);
+    let c = StateId(2);
+    let e = StateId(10);
+    for id in [a, b, c] {
+        space.add_state(State::new(id, vec![], vec![], vec![]));
+    }
+
+    // Link from nh0: {a,b} -> {e}, P(e)=1.0
+    space.add_link(Type2Link::complete(LinkId(0), nh0, &[a, b], vec![e], 1.0));
+
+    // Link from nh1: {a,b,c} -> {e}, P(e)=1.0
+    // Different source neighborhood → separate target neighborhood
+    space.add_link(Type2Link::complete(
+        LinkId(1),
+        nh1,
+        &[a, b, c],
+        vec![e],
+        1.0,
+    ));
+
+    // nh0 + nh1 + 2 separate target neighborhoods = 4
+    assert_eq!(space.neighborhoods.len(), 4);
+
+    // The two target neighborhoods have different members
+    let target_nhs: Vec<_> = space
+        .neighborhoods
+        .iter()
+        .filter(|n| n.id != nh0 && n.id != nh1)
+        .collect();
+    assert_eq!(target_nhs.len(), 2);
+
+    let members_sets: Vec<Vec<StateId>> = target_nhs.iter().map(|n| n.members.clone()).collect();
+    assert!(members_sets.contains(&vec![a, b]));
+    assert!(members_sets.contains(&vec![a, b, c]));
 }

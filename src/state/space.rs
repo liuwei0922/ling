@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use super::link::LinkId;
 use crate::feature::FeatureId;
 
 /// Identifier for an element in the state set `S`.
@@ -73,20 +74,26 @@ impl State {
 
 /// A neighborhood in the similarity space over `S`.
 ///
-/// The neighborhood only records its members. Membership confidence is stored
-/// on each `State`.
+/// The neighborhood records its members and the links that use it as source.
+/// Membership confidence is stored on each `State`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Neighborhood {
     /// Stable neighborhood identifier.
     pub id: NeighborhoodId,
     /// States that belong to this neighborhood.
     pub members: Vec<StateId>,
+    /// Type-2 links that have this neighborhood as their source.
+    pub source_links: Vec<LinkId>,
 }
 
 impl Neighborhood {
     /// Create a neighborhood from its members.
     pub fn new(id: NeighborhoodId, members: Vec<StateId>) -> Self {
-        Self { id, members }
+        Self {
+            id,
+            members,
+            source_links: Vec::new(),
+        }
     }
 }
 
@@ -100,6 +107,8 @@ pub struct StateSpace {
     pub links: Vec<super::link::Type2Link>,
     /// All known neighborhoods in the similarity space over `S`.
     pub neighborhoods: Vec<Neighborhood>,
+    /// Index from (source_neighborhood, target_state) to generated target neighborhood.
+    target_neighborhood_index: BTreeMap<(NeighborhoodId, StateId), NeighborhoodId>,
 }
 
 impl StateSpace {
@@ -113,8 +122,102 @@ impl StateSpace {
         self.states.push(state);
     }
 
-    /// Add a type-2 link.
-    pub fn add_link(&mut self, link: super::link::Type2Link) {
+    /// Add a type-2 link and automatically build target neighborhoods.
+    ///
+    /// For each target state, a Born-normalized confidence is computed from the
+    /// coherent amplitude sum of all Type1 links pointing to that target. When
+    /// multiple links share the same (source_neighborhood, target_state) pair,
+    /// their confidences are averaged.
+    pub fn add_link(&mut self, mut link: super::link::Type2Link) {
+        // Compute Born amplitudes per target.
+        let mut target_amp: BTreeMap<StateId, f64> = BTreeMap::new();
+        for tl in &link.type1_links {
+            *target_amp.entry(tl.target).or_insert(0.0) += tl.coefficient;
+        }
+        let total_sq: f64 = target_amp.values().map(|a| a * a).sum();
+
+        // Look up source neighborhood members.
+        let source_members: Vec<StateId> = self
+            .neighborhoods
+            .iter()
+            .find(|n| n.id == link.source)
+            .map(|n| n.members.clone())
+            .unwrap_or_default();
+
+        if total_sq > 0.0 {
+            for (&target, &amp) in &target_amp {
+                let p = amp * amp / total_sq;
+                if p <= 0.0 {
+                    continue;
+                }
+
+                let key = (link.source, target);
+                if let Some(&existing_nid) = self.target_neighborhood_index.get(&key) {
+                    // Merge: take the mean of all contributing links.
+                    let existing = self
+                        .neighborhoods
+                        .iter()
+                        .find(|n| n.id == existing_nid)
+                        .expect("target_neighborhood_index refers to non-existent neighborhood");
+                    let n = existing.source_links.len() as f64;
+                    let old_conf = self
+                        .states
+                        .iter()
+                        .find(|s| s.id == existing.members[0])
+                        .and_then(|s| {
+                            s.neighborhoods
+                                .iter()
+                                .position(|r| r.id == existing_nid)
+                                .map(|i| s.confidences[i])
+                        })
+                        .unwrap_or(p);
+                    let new_conf = (old_conf * n + p) / (n + 1.0);
+
+                    // Update all member states' confidences.
+                    for state in &mut self.states {
+                        if let Some(pos) = state
+                            .neighborhoods
+                            .iter()
+                            .position(|r| r.id == existing_nid)
+                        {
+                            state.confidences[pos] = new_conf;
+                        }
+                    }
+
+                    // Update neighborhood's source_links.
+                    if let Some(nh) = self.neighborhoods.iter_mut().find(|n| n.id == existing_nid) {
+                        nh.source_links.push(link.id);
+                    }
+
+                    link.target_neighborhoods.push(existing_nid);
+                } else {
+                    // Create a new target neighborhood.
+                    let nid = NeighborhoodId(self.neighborhoods.len());
+                    let nref = NeighborhoodRef::from(nid);
+
+                    for state in &mut self.states {
+                        if source_members.contains(&state.id) {
+                            state.neighborhoods.push(nref);
+                            state.confidences.push(p);
+                        }
+                    }
+
+                    self.neighborhoods.push(Neighborhood {
+                        id: nid,
+                        members: source_members.clone(),
+                        source_links: vec![link.id],
+                    });
+                    self.target_neighborhood_index.insert(key, nid);
+                    link.target_neighborhoods.push(nid);
+                }
+            }
+        }
+
+        // Record this link on the source neighborhood.
+        if let Some(src_nh) = self.neighborhoods.iter_mut().find(|n| n.id == link.source) {
+            src_nh.source_links.push(link.id);
+        }
+
         self.links.push(link);
     }
 
@@ -126,6 +229,11 @@ impl StateSpace {
     /// Return a state by identifier.
     pub fn state(&self, id: StateId) -> Option<&State> {
         self.states.iter().find(|state| state.id == id)
+    }
+
+    /// Return a neighborhood by identifier.
+    pub fn neighborhood(&self, id: NeighborhoodId) -> Option<&Neighborhood> {
+        self.neighborhoods.iter().find(|n| n.id == id)
     }
 
     /// Compute state similarity from direct neighborhood overlap.

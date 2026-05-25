@@ -27,6 +27,7 @@ use ling::state::{
 };
 
 const SIMILARITY_THRESHOLD: f64 = 0.9;
+const DIRECTION_NEIGHBORHOOD: NeighborhoodId = NeighborhoodId(0);
 
 #[derive(Debug, Clone, Copy)]
 struct DirectionCase {
@@ -89,9 +90,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for (idx, case) in train.iter().enumerate() {
         let link_id = LinkId(idx);
+        let source_members: Vec<StateId> = directions.iter().map(|d| d.state).collect();
         state_space.add_link(Type2Link::complete(
             link_id,
-            directions.iter().map(|case| case.state).collect(),
+            DIRECTION_NEIGHBORHOOD,
+            &source_members,
             vec![case.state],
             1.0,
         ));
@@ -118,10 +121,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn build_state_space(turn: StateId, directions: &[DirectionCase]) -> StateSpace {
-    let direction_neighborhood = NeighborhoodId(0);
     let mut state_space = StateSpace::new();
     state_space.add_neighborhood(Neighborhood::new(
-        direction_neighborhood,
+        DIRECTION_NEIGHBORHOOD,
         directions.iter().map(|case| case.state).collect(),
     ));
 
@@ -129,7 +131,7 @@ fn build_state_space(turn: StateId, directions: &[DirectionCase]) -> StateSpace 
         state_space.add_state(State::new(
             case.state,
             vec![case.input_feature],
-            vec![NeighborhoodRef::from(direction_neighborhood)],
+            vec![NeighborhoodRef::from(DIRECTION_NEIGHBORHOOD)],
             vec![1.0],
         ));
     }

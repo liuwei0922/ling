@@ -38,9 +38,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     state_space.add_state(State::new(turn, vec![], vec![], vec![]));
 
+    let source_members = vec![a, b, c, d];
     state_space.add_link(Type2Link::complete(
         LinkId(0),
-        vec![a, b, c, d],
+        direction_neighborhood,
+        &source_members,
         vec![a],
         1.0,
     ));
@@ -54,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if let Some(generated) = learner.transfer_single_target(turn, c, LinkId(1), &state_space) {
         log::info!(
-            "generated link {:?}: {:?} -> {:?}",
+            "generated link {:?}: source_nh={:?} -> {:?}",
             generated.id,
             generated.source,
             generated.target

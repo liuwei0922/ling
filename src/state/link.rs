@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use super::space::StateId;
+use super::space::{NeighborhoodId, StateId};
 use crate::probability::{AmplitudeDistribution, Probability, SelectionMode};
 
 /// Identifier for a type-2 link in the state set `S`.
@@ -23,28 +23,35 @@ pub struct Type1Link {
 pub struct Type2Link {
     /// Stable link identifier.
     pub id: LinkId,
-    /// Source subset.
-    pub source: Vec<StateId>,
+    /// Source neighborhood (the subset of `S` this link activates from).
+    pub source: NeighborhoodId,
     /// Target subset.
     pub target: Vec<StateId>,
     /// Type-1 links between source and target states.
     pub type1_links: Vec<Type1Link>,
+    /// Target neighborhoods generated from this link.
+    pub target_neighborhoods: Vec<NeighborhoodId>,
 }
 
 impl Type2Link {
     /// Create a type-2 link and generate all source-target type-1 links.
+    ///
+    /// `source_members` is the member list of the source neighborhood, used to
+    /// generate the complete bipartite Type1 links. `target_neighborhoods` is
+    /// initialized empty and filled by `StateSpace::add_link`.
     pub fn complete(
         id: LinkId,
-        source: Vec<StateId>,
+        source: NeighborhoodId,
+        source_members: &[StateId],
         target: Vec<StateId>,
         coefficient: f64,
     ) -> Self {
-        let type1_links = source
+        let type1_links = source_members
             .iter()
-            .flat_map(|source| {
-                target.iter().map(move |target| Type1Link {
-                    source: *source,
-                    target: *target,
+            .flat_map(|&src| {
+                target.iter().map(move |&tgt| Type1Link {
+                    source: src,
+                    target: tgt,
                     coefficient,
                 })
             })
@@ -55,12 +62,8 @@ impl Type2Link {
             source,
             target,
             type1_links,
+            target_neighborhoods: Vec::new(),
         }
-    }
-
-    /// Create an identity/self-loop link for a single state.
-    pub fn identity(id: LinkId, state: StateId) -> Self {
-        Self::complete(id, vec![state], vec![state], 1.0)
     }
 
     /// Activate type-1 links whose source is currently active.

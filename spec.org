@@ -33,7 +33,8 @@ SimilaritySpace {
 }
 
 Neighborhood {
-  members: Set<S>
+  members: Set<S>,
+  source_links: Vec<LinkId>
 }
 #+end_src
 
@@ -61,6 +62,28 @@ S 上两个元素的相似度由它们所属邻域的重叠直接决定，不再
 
 T 上的特征不再保存邻域隶属关系；Feature 仅保留 ID 作为外部输入输出的标识。
 
+*** 从 2 型连线自动构造邻域
+
+相似空间中的邻域可以从 2 型连线自动构造，无需手动预设。
+
+对于一条 2 型连线 ={s_1,...,s_n} -> {t_1,...,t_m}=，其中包含 n*m 条 1 型连线及对应
+系数。对每个目标状态 t_j，构造一个由该 2 型连线生成的邻域：
+
+1. 邻域的成员为源邻域的全部成员（=source_neighborhood.members=）。
+2. 置信度由相干叠加 + Born 归一化计算：
+   - 对目标 t_j，振幅 =amp(t_j) = sum(coeff of Type1 links targeting t_j)=
+   - Born 归一化：=P(t_j) = amp(t_j)^2 / sum_{t_k in target} amp(t_k)^2=
+   - 所有成员状态在该邻域中的置信度均为同一个标量 P(t_j)。
+
+当多条 2 型连线具有相同的 =(source_neighborhood, target_state)= 时，它们的目标邻域
+会被合并为一个。合并时置信度取各连线 P(t) 的简单均值，且该邻域的 =source_links=
+记录所有贡献的 2 型连线 ID。源邻域不同的 2 型连线不合并。
+
+构造时机：在 =StateSpace::add_link= 时自动触发，同时维护双向引用：
+- =Neighborhood.source_links= 记录哪些 2 型连线以该邻域为源。
+- =Type2Link.target_neighborhoods= 记录该连线生成的目标邻域。
+- 更新所有成员 State 的 =neighborhoods= 和 =confidences= 字段。
+
 *** 集合 S 到 S 的映射
 S 中既有基本状态元素 s，又有 S 的子集到 S 的子集的连线。
 
@@ -72,22 +95,26 @@ s1 -> s2
 
 每个 S 中的基本状态 s 可以认为有一条自身到自身的 1 型连线 s->s（自环，恒等映射）。
 
-S 的子集到 S 的子集的连线称为 2 型连线。例如：
+S 的子集到 S 的子集的连线称为 2 型连线。2 型连线的源集合是一个已存在的邻域：
 
 #+begin_src text
-{a,b,c} -> {d,e}
+Type2Link {
+  id: LinkId,
+  source: NeighborhoodId,       // 源邻域
+  target: Vec<StateId>,         // 目标状态子集
+  type1_links: Vec<Type1Link>,  // 内部 1 型连线
+  target_neighborhoods: Vec<NeighborhoodId>,  // 生成的目标邻域
+}
+
+Neighborhood {
+  id: NeighborhoodId,
+  members: Vec<StateId>,
+  source_links: Vec<LinkId>,    // 以该邻域为源的 2 型连线
+}
 #+end_src
 
-这个 2 型连线中包含若干 1 型连线：
-
-#+begin_src text
-a -> d
-b -> d
-c -> d
-a -> e
-b -> e
-c -> e
-#+end_src
+例如邻域 N_dir = {a,b,c,d}，一条 2 型连线可以表示为 N_dir -> {a}，即从方向邻域到
+某个具体方向状态的映射。
 
 每条 1 型连线带一个系数，这些系数构成概率分布或振幅分布，决定该 2 型连线实际倾向于
 激活哪些目标状态。

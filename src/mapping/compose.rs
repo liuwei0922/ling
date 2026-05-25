@@ -65,9 +65,12 @@ impl CompositionLearner {
                 return None;
             }
 
+            let source_nh = state_space.neighborhood(result_link.source)?;
+
             Some(Type2Link::complete(
                 new_link_id,
-                result_link.source.clone(),
+                result_link.source,
+                &source_nh.members,
                 vec![argument],
                 1.0,
             ))
